@@ -1,161 +1,126 @@
 /*
-Covid 19 Data Exploration 
+Covid-19 Data Exploration
 
-Skills used: Joins, CTE's, Temp Tables, Windows Functions, Aggregate Functions, Creating Views, Converting Data Types
+Skills used: Joins, CTEs, Temp Tables, Windows Functions, Aggregate Functions, Creating Views, Converting Data Types
 
+Description: This script performs exploratory data analysis on Covid-19 datasets, including calculations of infection and death rates, and vaccinations coverage.
+
+Table Name: COVID19Dataset
 */
 
-Select *
-From PortfolioProject..CovidDeaths
-Where continent is not null 
-order by 3,4
-
-
--- Select Data that we are going to be starting with
-
-Select Location, date, total_cases, new_cases, total_deaths, population
-From PortfolioProject..CovidDeaths
-Where continent is not null 
-order by 1,2
-
+-- Selecting initial data for exploration
+-- Fetching records where continent is not null and ordering by location and date
+SELECT Location, Date, Total_Cases, New_Cases, Total_Deaths, Population
+FROM COVID19Dataset
+WHERE Continent IS NOT NULL
+ORDER BY Location, Date;
 
 -- Total Cases vs Total Deaths
--- Shows likelihood of dying if you contract covid in your country
-
-Select Location, date, total_cases,total_deaths, (total_deaths/total_cases)*100 as DeathPercentage
-From PortfolioProject..CovidDeaths
-Where location like '%states%'
-and continent is not null 
-order by 1,2
-
+-- Shows the likelihood of dying from Covid-19 in different locations
+SELECT Location, Date, Total_Cases, Total_Deaths, 
+    (Total_Deaths / Total_Cases) * 100 AS DeathPercentage
+FROM COVID19Dataset
+WHERE Location LIKE '%states%'
+  AND Continent IS NOT NULL
+ORDER BY Location, Date;
 
 -- Total Cases vs Population
--- Shows what percentage of population infected with Covid
-
-Select Location, date, Population, total_cases,  (total_cases/population)*100 as PercentPopulationInfected
-From PortfolioProject..CovidDeaths
---Where location like '%states%'
-order by 1,2
-
+-- Calculates the percentage of the population infected with Covid-19
+SELECT Location, Date, Population, Total_Cases, 
+    (Total_Cases / Population) * 100 AS PercentPopulationInfected
+FROM COVID19Dataset
+ORDER BY Location, Date;
 
 -- Countries with Highest Infection Rate compared to Population
-
-Select Location, Population, MAX(total_cases) as HighestInfectionCount,  Max((total_cases/population))*100 as PercentPopulationInfected
-From PortfolioProject..CovidDeaths
---Where location like '%states%'
-Group by Location, Population
-order by PercentPopulationInfected desc
-
+-- Identifies countries with the highest percentage of population infected
+SELECT Location, Population, 
+    MAX(Total_Cases) AS HighestInfectionCount, 
+    MAX((Total_Cases / Population) * 100) AS PercentPopulationInfected
+FROM COVID19Dataset
+GROUP BY Location, Population
+ORDER BY PercentPopulationInfected DESC;
 
 -- Countries with Highest Death Count per Population
+-- Identifies countries with the highest death count
+SELECT Location, 
+    MAX(CAST(Total_Deaths AS INT)) AS TotalDeathCount
+FROM COVID19Dataset
+WHERE Continent IS NOT NULL
+GROUP BY Location
+ORDER BY TotalDeathCount DESC;
 
-Select Location, MAX(cast(Total_deaths as int)) as TotalDeathCount
-From PortfolioProject..CovidDeaths
---Where location like '%states%'
-Where continent is not null 
-Group by Location
-order by TotalDeathCount desc
+-- Breaking down data by continent
+-- Showing continents with the highest death count
+SELECT Continent, 
+    MAX(CAST(Total_Deaths AS INT)) AS TotalDeathCount
+FROM COVID19Dataset
+WHERE Continent IS NOT NULL
+GROUP BY Continent
+ORDER BY TotalDeathCount DESC;
 
-
-
--- BREAKING THINGS DOWN BY CONTINENT
-
--- Showing contintents with the highest death count per population
-
-Select continent, MAX(cast(Total_deaths as int)) as TotalDeathCount
-From PortfolioProject..CovidDeaths
---Where location like '%states%'
-Where continent is not null 
-Group by continent
-order by TotalDeathCount desc
-
-
-
--- GLOBAL NUMBERS
-
-Select SUM(new_cases) as total_cases, SUM(cast(new_deaths as int)) as total_deaths, SUM(cast(new_deaths as int))/SUM(New_Cases)*100 as DeathPercentage
-From PortfolioProject..CovidDeaths
---Where location like '%states%'
-where continent is not null 
---Group By date
-order by 1,2
-
-
+-- Global Numbers
+-- Aggregates global Covid-19 cases and death percentages
+SELECT SUM(New_Cases) AS Total_Cases, 
+       SUM(CAST(New_Deaths AS INT)) AS Total_Deaths, 
+       (SUM(CAST(New_Deaths AS INT)) / SUM(New_Cases)) * 100 AS DeathPercentage
+FROM COVID19Dataset
+WHERE Continent IS NOT NULL;
 
 -- Total Population vs Vaccinations
--- Shows Percentage of Population that has recieved at least one Covid Vaccine
+-- Shows the percentage of the population that has received at least one Covid-19 vaccine
+SELECT dea.Continent, dea.Location, dea.Date, dea.Population, vac.New_Vaccinations,
+    SUM(CONVERT(INT, vac.New_Vaccinations)) OVER (PARTITION BY dea.Location ORDER BY dea.Date) AS RollingPeopleVaccinated
+FROM COVID19Dataset dea
+JOIN COVID19Vaccinations vac
+    ON dea.Location = vac.Location
+    AND dea.Date = vac.Date
+WHERE dea.Continent IS NOT NULL
+ORDER BY dea.Location, dea.Date;
 
-Select dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
-, SUM(CONVERT(int,vac.new_vaccinations)) OVER (Partition by dea.Location Order by dea.location, dea.Date) as RollingPeopleVaccinated
---, (RollingPeopleVaccinated/population)*100
-From PortfolioProject..CovidDeaths dea
-Join PortfolioProject..CovidVaccinations vac
-	On dea.location = vac.location
-	and dea.date = vac.date
-where dea.continent is not null 
-order by 2,3
-
-
--- Using CTE to perform Calculation on Partition By in previous query
-
-With PopvsVac (Continent, Location, Date, Population, New_Vaccinations, RollingPeopleVaccinated)
-as
-(
-Select dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
-, SUM(CONVERT(int,vac.new_vaccinations)) OVER (Partition by dea.Location Order by dea.location, dea.Date) as RollingPeopleVaccinated
---, (RollingPeopleVaccinated/population)*100
-From PortfolioProject..CovidDeaths dea
-Join PortfolioProject..CovidVaccinations vac
-	On dea.location = vac.location
-	and dea.date = vac.date
-where dea.continent is not null 
---order by 2,3
+-- Using CTE to calculate the rolling total of vaccinated people
+WITH PopVsVac AS (
+    SELECT dea.Continent, dea.Location, dea.Date, dea.Population, vac.New_Vaccinations,
+        SUM(CONVERT(INT, vac.New_Vaccinations)) OVER (PARTITION BY dea.Location ORDER BY dea.Date) AS RollingPeopleVaccinated
+    FROM COVID19Dataset dea
+    JOIN COVID19Vaccinations vac
+        ON dea.Location = vac.Location
+        AND dea.Date = vac.Date
+    WHERE dea.Continent IS NOT NULL
 )
-Select *, (RollingPeopleVaccinated/Population)*100
-From PopvsVac
+SELECT *, (RollingPeopleVaccinated / Population) * 100 AS PercentPopulationVaccinated
+FROM PopVsVac;
 
+-- Using Temp Table to perform calculations
+-- Creating a temp table to store and calculate vaccination percentages
+DROP TABLE IF EXISTS #PercentPopulationVaccinated;
 
+CREATE TABLE #PercentPopulationVaccinated (
+    Continent NVARCHAR(255),
+    Location NVARCHAR(255),
+    Date DATETIME,
+    Population NUMERIC,
+    New_Vaccinations NUMERIC,
+    RollingPeopleVaccinated NUMERIC
+);
 
--- Using Temp Table to perform Calculation on Partition By in previous query
+INSERT INTO #PercentPopulationVaccinated
+SELECT dea.Continent, dea.Location, dea.Date, dea.Population, vac.New_Vaccinations,
+    SUM(CONVERT(INT, vac.New_Vaccinations)) OVER (PARTITION BY dea.Location ORDER BY dea.Date) AS RollingPeopleVaccinated
+FROM COVID19Dataset dea
+JOIN COVID19Vaccinations vac
+    ON dea.Location = vac.Location
+    AND dea.Date = vac.Date;
 
-DROP Table if exists #PercentPopulationVaccinated
-Create Table #PercentPopulationVaccinated
-(
-Continent nvarchar(255),
-Location nvarchar(255),
-Date datetime,
-Population numeric,
-New_vaccinations numeric,
-RollingPeopleVaccinated numeric
-)
+-- Selecting from temp table to get vaccination coverage
+SELECT *, (RollingPeopleVaccinated / Population) * 100 AS PercentPopulationVaccinated
+FROM #PercentPopulationVaccinated;
 
-Insert into #PercentPopulationVaccinated
-Select dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
-, SUM(CONVERT(int,vac.new_vaccinations)) OVER (Partition by dea.Location Order by dea.location, dea.Date) as RollingPeopleVaccinated
---, (RollingPeopleVaccinated/population)*100
-From PortfolioProject..CovidDeaths dea
-Join PortfolioProject..CovidVaccinations vac
-	On dea.location = vac.location
-	and dea.date = vac.date
---where dea.continent is not null 
---order by 2,3
-
-Select *, (RollingPeopleVaccinated/Population)*100
-From #PercentPopulationVaccinated
-
-
-
-
--- Creating View to store data for later visualizations
-
-Create View PercentPopulationVaccinated as
-Select dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
-, SUM(CONVERT(int,vac.new_vaccinations)) OVER (Partition by dea.Location Order by dea.location, dea.Date) as RollingPeopleVaccinated
---, (RollingPeopleVaccinated/population)*100
-From PortfolioProject..CovidDeaths dea
-Join PortfolioProject..CovidVaccinations vac
-	On dea.location = vac.location
-	and dea.date = vac.date
-where dea.continent is not null 
-
-
+-- Creating View for persistent access to vaccination data
+CREATE VIEW PercentPopulationVaccinated AS
+SELECT dea.Continent, dea.Location, dea.Date, dea.Population, vac.New_Vaccinations,
+    SUM(CONVERT(INT, vac.New_Vaccinations)) OVER (PARTITION BY dea.Location ORDER BY dea.Date) AS RollingPeopleVaccinated
+FROM COVID19Dataset dea
+JOIN COVID19Vaccinations vac
+    ON dea.Location = vac.Location
+    AND dea.Date = vac.Date
+WHERE dea.Continent IS NOT NULL;
